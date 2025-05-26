@@ -1,0 +1,13 @@
+[package]
+name = "memvdb"
+version = "0.1.0"
+edition = "2024"
+authors = ["Xinyu Bao <baoxinyuworks@163.com>"]
+description = "A Rust library for parsing JSON objects from text streams"
+license = "MIT"
+repository = "https://github.com/AspadaX/memvdb"
+readme = "README.md"
+keywords = ["vector", "database", "in-memory", "search", "embedding"]
+categories = ["database", "data-structures"]
+
+[dependencies]
