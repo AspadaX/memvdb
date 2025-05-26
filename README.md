@@ -20,9 +20,8 @@ MemVDB is a fast, lightweight in-memory vector database written in Rust. It prov
 
 Add MemVDB to your `Cargo.toml`:
 
-```toml
-[dependencies]
-memvdb = "0.1.0"
+```bash
+cargo add memvdb
 ```
 
 ## 🎯 Quick Start
