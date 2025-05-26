@@ -380,7 +380,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🙏 Acknowledgments
 
-- Inspired by (memvectordb)[https://github.com/KevKibe/memvectordb]
+- Inspired by [memvectordb](https://github.com/KevKibe/memvectordb)
 - Built with Rust's performance and safety in mind
 - Optimized for machine learning and AI applications
 
