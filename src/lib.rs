@@ -1,3 +1,7 @@
+mod db;
+mod replay_log;
+mod similarity;
+
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
 }
