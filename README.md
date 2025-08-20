@@ -62,6 +62,17 @@ let results = collection.get_similarity(&query_vector, 5);
 println!("Found {} similar documents", results.len());
 ```
 
+## Features
+
+MemVDB supports optional features that can be enabled or disabled based on your needs. Features are designed to be modular, allowing you to include only what you need. All features are enabled by default.
+
+| Feature | Description | Dependencies |
+|---------|-------------|-------------|
+| `log` | Enable structured logging with the `log` crate | `log` |
+| `serde` | Enable serialization/deserialization support | `serde` |
+| `persist` | Enable database persistence (save/load to JSON files) | `serde_json`, `serde` |
+| `rayon` | Enable parallel processing for similarity search | `rayon` |
+
 ## 📚 Core Concepts
 
 ### Collections
@@ -309,6 +320,9 @@ cargo test --test integration_tests # Integration tests
 cargo test --test similarity_tests  # Similarity function tests
 cargo test --test error_tests       # Error handling tests
 cargo test --test performance_tests # Performance tests
+
+# Run tests against all possible feature combinations (requires cargo-hack)
+cargo hack test --feature-powerset
 ```
 
 ### Run Examples

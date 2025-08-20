@@ -13,15 +13,19 @@
 
 use crate::similarity::{ScoreIndex, get_cache_attr, get_distance_fn, normalize};
 use anyhow::Result;
+#[cfg(feature = "log")]
 use log::{debug, error, info};
+#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BinaryHeap, HashMap};
+#[cfg(feature = "persist")]
 use std::fs::File;
 use std::hash::{Hash, Hasher};
+#[cfg(feature = "persist")]
 use std::io::{BufReader, Write};
-
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// The main in-memory vector database structure.
@@ -39,7 +43,8 @@ use serde::{Deserialize, Serialize};
 /// db.create_collection("images".to_string(), 512, Distance::Cosine).unwrap();
 /// assert!(db.get_collection("images").is_some());
 /// ```
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct CacheDB {
     /// HashMap containing all collections, indexed by collection name
     pub collections: HashMap<String, Collection>,
@@ -54,7 +59,8 @@ pub struct CacheDB {
 ///
 /// * `score` - The similarity score (interpretation depends on distance metric)
 /// * `embedding` - The matching embedding with its metadata
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SimilarityResult {
     /// Similarity score - lower values indicate closer matches for distance metrics
     pub score: f32,
@@ -79,14 +85,15 @@ pub struct SimilarityResult {
 /// };
 /// assert_eq!(collection.dimension, 128);
 /// ```
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Collection {
     /// The required dimensionality for all vectors in this collection
     pub dimension: usize,
     /// The distance metric used for similarity calculations
     pub distance: Distance,
     /// Vector of all embeddings stored in this collection
-    #[serde(default)]
+    #[cfg_attr(feature = "serde", serde(default))]
     pub embeddings: Vec<Embedding>,
 }
 
@@ -113,7 +120,8 @@ pub struct Collection {
 ///     metadata: Some(metadata),
 /// };
 /// ```
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Embedding {
     /// Unique identifier for this embedding (can be composite)
     pub id: HashMap<String, String>,
@@ -140,16 +148,17 @@ pub struct Embedding {
 /// assert_eq!(metric, Distance::Cosine);
 /// assert_ne!(metric, Distance::Euclidean);
 /// ```
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Distance {
     /// Euclidean (L2) distance - sqrt(sum((a_i - b_i)^2))
-    #[serde(rename = "euclidean")]
+    #[cfg_attr(feature = "serde", serde(rename = "euclidean"))]
     Euclidean,
     /// Cosine similarity - measures angle between vectors
-    #[serde(rename = "cosine")]
+    #[cfg_attr(feature = "serde", serde(rename = "cosine"))]
     Cosine,
     /// Dot product - sum(a_i * b_i)
-    #[serde(rename = "dot")]
+    #[cfg_attr(feature = "serde", serde(rename = "dot"))]
     DotProduct,
 }
 
@@ -175,7 +184,8 @@ pub enum Error {
     LoggerInitializationError,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration for creating a new collection.
 ///
 /// This struct encapsulates all the parameters needed to create a new collection
@@ -201,7 +211,8 @@ pub struct CreateCollectionStruct {
     pub distance: Distance,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 
 /// Configuration for inserting a single embedding.
 ///
@@ -213,7 +224,8 @@ pub struct InsertEmbeddingStruct {
     pub embedding: Embedding,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration for collection operations.
 ///
 /// Simple struct containing just the collection name for operations
@@ -223,7 +235,8 @@ pub struct CollectionHandlerStruct {
     pub collection_name: String,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration for batch embedding operations.
 ///
 /// Used for inserting or updating multiple embeddings at once,
@@ -235,7 +248,8 @@ pub struct BatchInsertEmbeddingsStruct {
     pub embeddings: Vec<Embedding>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 /// Configuration for similarity search operations.
 ///
 /// Contains all parameters needed to perform a k-nearest neighbors search
@@ -285,6 +299,7 @@ impl Collection {
     ///
     /// A vector of similarity results, sorted by their similarity scores.
     pub fn get_similarity(&self, query: &[f32], k: usize) -> Vec<SimilarityResult> {
+        #[cfg(feature = "log")]
         debug!(
             "Starting similarity computation with query vector of length {} and top k = {}",
             query.len(),
@@ -295,10 +310,13 @@ impl Collection {
         let memo_attr = get_cache_attr(self.distance, query);
         let distance_fn = get_distance_fn(self.distance);
 
+        #[cfg(feature = "log")]
         debug!("Using distance function: {:?}", self.distance);
+        #[cfg(feature = "log")]
         debug!("Memo attributes for distance function: {:?}", memo_attr);
 
         // Calculate similarity scores for each embedding in parallel.
+        #[cfg(feature = "rayon")]
         let scores = self
             .embeddings
             .par_iter()
@@ -308,6 +326,17 @@ impl Collection {
                 ScoreIndex { score, index }
             })
             .collect::<Vec<_>>();
+        #[cfg(not(feature = "rayon"))]
+        let scores = self
+            .embeddings
+            .iter()
+            .enumerate()
+            .map(|(index, embedding)| {
+                let score = distance_fn(&embedding.vector, query, memo_attr);
+                ScoreIndex { score, index }
+            })
+            .collect::<Vec<_>>();
+        #[cfg(feature = "log")]
         debug!("Calculated {} similarity scores", scores.len());
         // Use a binary heap to efficiently find the top k similarity results.
         let mut heap = BinaryHeap::new();
@@ -320,6 +349,7 @@ impl Collection {
                 }
             }
         }
+        #[cfg(feature = "log")]
         debug!("Top k heap size: {}", heap.len());
 
         // Convert the heap into a sorted vector and map each score to a SimilarityResult.
@@ -331,6 +361,7 @@ impl Collection {
                 embedding: self.embeddings[index].clone(),
             })
             .collect();
+        #[cfg(feature = "log")]
         info!(
             "Similarity computed successfully'{}' ",
             format!("{:?}", result)
@@ -366,6 +397,7 @@ impl CacheDB {
     ) -> Result<Collection, Error> {
         // Check if a collection with the same name already exists.
         if self.collections.contains_key(&name) {
+            #[cfg(feature = "log")]
             error!("Collection: '{}', already exists", name);
             return Err(Error::UniqueViolation);
         }
@@ -378,6 +410,7 @@ impl CacheDB {
         };
         self.collections.insert(name.clone(), collection.clone());
 
+        #[cfg(feature = "log")]
         info!(
             "Created new collection with name: '{}', dimension: '{}', distance: '{:?}'",
             name, dimension, distance
@@ -397,6 +430,7 @@ impl CacheDB {
     pub fn delete_collection(&mut self, name: &str) -> Result<(), Error> {
         // Check if the collection exists before attempting to delete it.
         if !self.collections.contains_key(name) {
+            #[cfg(feature = "log")]
             error!("Collection name: '{}', does not exist", name);
             return Err(Error::NotFound);
         }
@@ -404,6 +438,7 @@ impl CacheDB {
         // Remove the collection from the database.
         self.collections.remove(name);
 
+        #[cfg(feature = "log")]
         info!("Deleted collection: '{}'", name);
         Ok(())
     }
@@ -438,6 +473,7 @@ impl CacheDB {
 
         // Check for duplicate embeddings by hashed ID.
         if !unique_ids.insert(hash_map_id(&embedding.id)) {
+            #[cfg(feature = "log")]
             error!(
                 "Embedding with ID '{}' already exists in collection '{}'",
                 format!("{:?}", embedding.id),
@@ -448,6 +484,7 @@ impl CacheDB {
 
         // Check if the embedding's dimension matches the collection's dimension.
         if embedding.vector.len() != collection.dimension {
+            #[cfg(feature = "log")]
             error!(
                 "Dimension mismatch: embedding vector length is '{}' but collection '{}' expects dimension '{}'",
                 embedding.vector.len(),
@@ -465,6 +502,7 @@ impl CacheDB {
         // Add the embedding to the collection.
         collection.embeddings.push(embedding.clone());
 
+        #[cfg(feature = "log")]
         info!(
             "Embedding: '{:?}', successfully inserted into collection '{}'",
             embedding, collection_name
@@ -504,6 +542,7 @@ impl CacheDB {
 
             // Check for duplicate embeddings by hashed ID.
             if !unique_ids.insert(hash_map_id(&embedding.id)) {
+                #[cfg(feature = "log")]
                 error!(
                     "Embedding with ID '{}' already exists in collection '{}'",
                     format!("{:?}", embedding.id),
@@ -514,6 +553,7 @@ impl CacheDB {
 
             // Check if the embedding's dimension matches the collection's dimension.
             if embedding.vector.len() != collection.dimension {
+                #[cfg(feature = "log")]
                 error!(
                     "Dimension mismatch: embedding vector length is '{}' but collection '{}' expects dimension '{}'",
                     embedding.vector.len(),
@@ -532,6 +572,7 @@ impl CacheDB {
             collection.embeddings.push(embedding.clone());
         }
 
+        #[cfg(feature = "log")]
         info!(
             "Embedding: '{:?}' successfully updated to collection '{}'",
             new_embeddings, collection_name
@@ -551,10 +592,12 @@ impl CacheDB {
     pub fn get_collection(&self, collection_name: &str) -> Option<&Collection> {
         match self.collections.get(collection_name) {
             Some(collection) => {
+                #[cfg(feature = "log")]
                 info!("Collection '{}' found", collection_name);
                 Some(collection)
             }
             None => {
+                #[cfg(feature = "log")]
                 error!("Collection '{}' not found", collection_name);
                 None
             }
@@ -573,6 +616,7 @@ impl CacheDB {
     pub fn get_embeddings(&self, collection_name: &str) -> Option<Vec<Embedding>> {
         match self.collections.get(collection_name) {
             Some(collection) => {
+                #[cfg(feature = "log")]
                 info!(
                     "Successfully retrieved embeddings for collection '{}'",
                     collection_name
@@ -580,6 +624,7 @@ impl CacheDB {
                 Some(collection.embeddings.clone())
             }
             None => {
+                #[cfg(feature = "log")]
                 error!("Collection '{}' not found", collection_name);
                 None
             }
@@ -590,6 +635,7 @@ impl CacheDB {
     ///
     /// Serializes the entire CacheDB instance, including all collections and their embeddings,
     /// to a JSON file. This allows for data persistence across application restarts.
+    /// The 'persist' feature must be enabled to use this function.
     ///
     /// # Arguments
     ///
@@ -621,6 +667,7 @@ impl CacheDB {
     /// - The database cannot be serialized to JSON
     /// - The file cannot be created or written to
     /// - There are insufficient permissions to write to the specified path
+    #[cfg(feature = "persist")]
     pub fn save(&self, filepath: Option<&str>) -> Result<()> {
         let file_content: String = serde_json::to_string_pretty(&self)?;
 
@@ -635,6 +682,7 @@ impl CacheDB {
         let mut file: File = File::create(filepath)?;
         file.write_all(file_content.as_bytes())?;
 
+        #[cfg(feature = "log")]
         info!("Database successfully saved to '{}'", filepath);
         Ok(())
     }
@@ -643,6 +691,7 @@ impl CacheDB {
     ///
     /// Deserializes a previously saved CacheDB instance from a JSON file,
     /// restoring all collections, embeddings, and their associated metadata.
+    /// The 'persist' feature must be enabled to use this function.
     ///
     /// # Arguments
     ///
@@ -655,7 +704,7 @@ impl CacheDB {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```no_run
     /// use memvdb::CacheDB;
     ///
     /// // Load a previously saved database
@@ -674,11 +723,13 @@ impl CacheDB {
     /// - The file content is not valid JSON
     /// - The JSON structure doesn't match the expected CacheDB format
     /// - There are insufficient permissions to read the file
+    #[cfg(feature = "persist")]
     pub fn load(filepath: &str) -> Result<Self> {
         let file: File = std::fs::OpenOptions::new().open(filepath)?;
         let buffer: BufReader<File> = BufReader::new(file);
 
         let db: CacheDB = serde_json::from_reader(buffer)?;
+        #[cfg(feature = "log")]
         info!("Database successfully loaded from '{}'", filepath);
         Ok(db)
     }
